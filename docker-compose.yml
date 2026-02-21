@@ -21,12 +21,9 @@ services:
     depends_on:
       - db
     environment:
-      # ВЕРНУЛИ 5432, так как api и db находятся в одной внутренней сети
       - DATABASE_URL=postgresql://admin:admin_password@db:5432/chatbot
     volumes:
-      # ОСТАВИЛИ ТОЛЬКО ОДНУ СТРОЧКУ, связывающую локальную папку с контейнером
       - ./backend:/app
 
 volumes:
   postgres_data:
-  # Убрали лишний backend отсюда

@@ -2,12 +2,12 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from db.models import RoleEnum
 
-# Это то, что мы ЖДЕМ от пользователя при регистрации
+# what we except
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
-# Это то, что мы ОТДАЕМ обратно (обрати внимание, пароля тут нет!)
+#what we return
 class UserResponse(BaseModel):
     id: int
     email: EmailStr

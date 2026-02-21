@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from db.database import SessionLocal
-from schemas.user import UserCreate, UserResponse, UserLogin, Token # <-- Добавили логин и токен
+from schemas.user import UserCreate, UserResponse, UserLogin, Token
 from db.models import User
-# Добавили проверку пароля и создание токенов:
 from services.security import get_password_hash, verify_password, create_access_token, create_refresh_token
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
