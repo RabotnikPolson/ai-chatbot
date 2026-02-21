@@ -4,4 +4,9 @@ sqlalchemy
 psycopg2-binary
 pydantic
 pydantic-settings
+email-validator
 alembic
+passlib
+bcrypt==3.2.2
+PyJWT
+python-multipart
