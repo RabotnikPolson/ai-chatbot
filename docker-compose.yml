@@ -13,6 +13,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    container_name: chatbot_redis
+    ports:
+      - "6379:6379"
+
   api:
     build: ./backend
     container_name: chatbot_api
@@ -20,10 +26,26 @@ services:
       - "8000:8000"
     depends_on:
       - db
+      - redis
     environment:
       - DATABASE_URL=postgresql://admin:admin_password@db:5432/chatbot
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend:/app
+
+  worker:
+    build: ./backend
+    container_name: chatbot_worker
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://admin:admin_password@db:5432/chatbot
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+    command: celery -A workers.celery_app worker --loglevel=info
 
 volumes:
   postgres_data:

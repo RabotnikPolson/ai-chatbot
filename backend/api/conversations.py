@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 import jwt
+from workers.tasks import generate_reply
 
 from db.database import SessionLocal
 from db.models import Conversation
@@ -9,15 +10,17 @@ from schemas.conversation import ConversationCreate, ConversationResponse
 from api.auth import oauth2_scheme, get_db
 from services.security import SECRET_KEY, ALGORITHM
 
+from db.models import Message, MessageRoleEnum, MessageStatusEnum
+from schemas.message import MessageCreate, MessageResponse
+
 # Создаем роутер для диалогов
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
-# Вспомогательная функция: достает ID пользователя из его токена
 def get_current_user_id(token: str = Depends(oauth2_scheme)):
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     return int(payload.get("sub"))
 
-# Эндпоинт 1: Создать новый чат
+
 @router.post("/", response_model=ConversationResponse)
 def create_conversation(
         conv_data: ConversationCreate,
@@ -39,3 +42,105 @@ def get_conversations(
 ):
     # Ищем в базе только те чаты, у которых owner_user_id совпадает с нашим
     return db.query(Conversation).filter(Conversation.owner_user_id == user_id).all()
+
+
+# Эндпоинт 3: Получить детали конкретного чата
+@router.get("/{id}", response_model=ConversationResponse)
+def get_conversation(
+        id: int,
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id)
+):
+    # Ищем чат по ID, при этом проверяем, что он принадлежит текущему пользователю
+    conv = db.query(Conversation).filter(Conversation.id == id, Conversation.owner_user_id == user_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Диалог не найден или у вас нет к нему доступа")
+    return conv
+
+
+@router.post("/{conversation_id}/messages", response_model=MessageResponse)
+def send_message(
+        conversation_id: int, # FastAPI автоматически возьмет это из URL /{conversation_id}/messages
+        message_data: MessageCreate, # Pydantic проверит JSON тело (наш текст)
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id) # Проверяем, что юзер авторизован
+):
+    # 1. Проверяем, существует ли такой чат вообще и принадлежит ли он этому юзеру
+    chat = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.owner_user_id == user_id
+    ).first()
+
+    # Если чата нет или он чужой — кидаем ошибку 404
+    if not chat:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Чат не найден")
+
+    # 2. Сохраняем сообщение пользователя в БД
+    user_message = Message(
+        conversation_id=conversation_id,
+        role=MessageRoleEnum.user,
+        content=message_data.text, # Берем text из схемы и кладем в content модели БД
+        status=MessageStatusEnum.done # Сообщение юзера всегда "done", он же его уже написал
+    )
+    db.add(user_message)
+    db.commit()
+
+    # 3. Создаем "пустое" сообщение для ассистента со статусом queued (как просит ТЗ)
+    assistant_message = Message(
+        conversation_id=conversation_id,
+        role=MessageRoleEnum.assistant,
+        content="", # Пока пустое, бот еще думает
+        status=MessageStatusEnum.queued
+    )
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(assistant_message) # Обновляем, чтобы получить его сгенерированный ID
+
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(assistant_message)
+
+    generate_reply.delay(assistant_message.id)
+    # ТЗ просит возвращать статус "queued" и message_id
+    # Наш MessageResponse как раз вернет данные assistant_message
+    return assistant_message
+
+from fastapi import HTTPException
+
+# Эндпоинт 4: Получить статус и текст конкретного сообщения
+@router.get("/messages/{message_id}", response_model=MessageResponse)
+def get_message_status(
+        message_id: int,
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id) # Защита: проверяем, что юзер залогинен
+):
+    # Ищем сообщение в базе
+    message = db.query(Message).filter(Message.id == message_id).first()
+
+    # Если сообщения нет, отдаем ошибку 404
+    if not message:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+
+    # Дополнительная проверка безопасности:
+    # Убеждаемся, что чат, к которому привязано сообщение, принадлежит этому юзеру
+    chat = db.query(Conversation).filter(Conversation.id == message.conversation_id).first()
+    if not chat or chat.owner_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
+
+    return message
+
+
+@router.delete("/{id}")
+def delete_conversation(
+        id: int,
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id)
+):
+    conv = db.query(Conversation).filter(Conversation.id == id, Conversation.owner_user_id == user_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Диалог не найден или у вас нет к нему доступа")
+
+    db.delete(conv)
+    db.commit()
+    return {"message": "Диалог удален"}

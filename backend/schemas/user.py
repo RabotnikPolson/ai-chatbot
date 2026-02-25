@@ -2,12 +2,12 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from db.models import RoleEnum
 
-# what we except
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
-#what we return
+
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
@@ -25,3 +25,6 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
