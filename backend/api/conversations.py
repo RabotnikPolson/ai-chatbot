@@ -198,6 +198,29 @@ def stream_message(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+# history for front
+@router.get("/{conversation_id}/messages", response_model=List[MessageResponse])
+def get_chat_history(
+        conversation_id: int,
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id)
+):
+    chat = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.owner_user_id == user_id
+    ).first()
+
+    if not chat:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+
+    # старые сверху
+    messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.created_at.asc()).all()
+
+    return messages
+
+
 @router.delete("/{id}")
 def delete_conversation(
         id: int,

@@ -77,5 +77,5 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
 def get_my_profile(token: str = Depends(oauth2_scheme)):
     return {
         "message": "Ура! Ты прошел фейс-контроль",
-        "your_token": token
+        "your_token": token,
     }
