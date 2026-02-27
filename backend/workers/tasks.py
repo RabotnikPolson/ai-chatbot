@@ -1,40 +1,90 @@
-import time
+import os
+import redis
+import json
+
+import logging
+logger = logging.getLogger(__name__)
+
 from workers.celery_app import celery_app
 from db.database import SessionLocal
 from db.models import Message, MessageStatusEnum
+from providers.ollama import OllamaProvider
 
-# Декоратор @celery_app.task превращает обычную функцию в фоновую задачу Celery
+# Подключаемся к Redis напрямую
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+redis_client = redis.from_url(REDIS_URL)
+
 @celery_app.task(name="generate_reply")
 def generate_reply(message_id: int):
-    # Воркер работает в отдельном процессе, поэтому ему нужна своя сессия для работы с БД!
     db = SessionLocal()
     try:
-        # Достаем то самое пустое сообщение со статусом "queued"
         msg = db.query(Message).filter(Message.id == message_id).first()
         if not msg:
-            return "Message not found" # Если не нашли, просто выходим
+            return "Message not found"
 
-        # 1. Меняем статус на "в процессе"
         msg.status = MessageStatusEnum.processing
         db.commit()
 
-        # 2. Имитируем тяжелую работу нейросети (спим 5 секунд)
-        time.sleep(5)
+        # === 1. БЛОК КЭШИРОВАНИЯ ИСТОРИИ ===
+        cache_key = f"conversation:{msg.conversation_id}:last_messages"
+        cached_history = redis_client.get(cache_key)
 
-        # 3. Пишем ответ и ставим финальный статус
-        msg.content = "Привет! Я сгенерирован настоящим Celery-воркером через Redis!"
+        if cached_history:
+            # CACHE HIT
+            logger.info(f"CACHE HIT: Достали историю из Redis для чата {msg.conversation_id}")
+            messages_for_ollama = json.loads(cached_history)
+        else:
+            # CACHE MISS
+            logger.info(f"CACHE MISS: Идем в базу данных для чата {msg.conversation_id}")
+
+            history = db.query(Message).filter(
+                Message.conversation_id == msg.conversation_id,
+                Message.id != message_id,
+                Message.status == MessageStatusEnum.done
+            ).order_by(Message.created_at.desc()).limit(20).all()
+
+            history = history[::-1]
+
+            messages_for_ollama = []
+            for h_msg in history:
+                messages_for_ollama.append({
+                    "role": h_msg.role.value,
+                    "content": h_msg.content
+                })
+
+            redis_client.setex(cache_key, 60, json.dumps(messages_for_ollama))
+
+        # === 2. БЛОК ГЕНЕРАЦИИ И СТРИМИНГА ===
+        # Вызываем провайдер только один раз!
+        provider = OllamaProvider(model="qwen2.5:0.5b")
+
+        full_answer = ""
+        channel_name = f"chat_stream_{message_id}"
+
+        # Итерируемся по генератору (получаем кусочки текста)
+        for chunk in provider.generate_stream(messages=messages_for_ollama):
+            full_answer += chunk # Приклеиваем кусочек к полному ответу
+            # Вещаем этот кусочек в радиоканал Redis!
+            redis_client.publish(channel_name, chunk)
+
+        # Сигнал окончания стрима
+        redis_client.publish(channel_name, "[DONE]")
+
+        # === 3. СОХРАНЕНИЕ РЕЗУЛЬТАТА ===
+        msg.content = full_answer
         msg.status = MessageStatusEnum.done
+        msg.provider = "ollama"
         db.commit()
 
         return "Success"
+
     except Exception as e:
-        # Если что-то упало (например, отвалилась БД), ставим статус failed
         db.rollback()
         if msg:
             msg.status = MessageStatusEnum.failed
             msg.error = str(e)
             db.commit()
+            redis_client.publish(f"chat_stream_{message_id}", "[ERROR]")
         raise e
     finally:
-        # ОБЯЗАТЕЛЬНО закрываем сессию БД
         db.close()

@@ -62,3 +62,11 @@ class Message(Base):
 
     # Связь для Питона, чтобы мы могли писать message.conversation
     conversation = relationship("Conversation", back_populates="messages")
+
+class FAQItem(Base):
+    __tablename__ = "faq_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)  # Например: "Как работает кэш?"
+    content = Column(String, nullable=False) # Подробный ответ
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

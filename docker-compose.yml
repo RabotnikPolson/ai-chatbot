@@ -47,5 +47,16 @@ services:
       - ./backend:/app
     command: celery -A workers.celery_app worker --loglevel=info
 
+
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: chatbot_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
-  postgres_data:
+    postgres_data:
+    ollama_data:

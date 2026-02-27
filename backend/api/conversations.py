@@ -1,3 +1,7 @@
+import os
+import redis
+from fastapi.responses import StreamingResponse
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -13,6 +17,9 @@ from services.security import SECRET_KEY, ALGORITHM
 from db.models import Message, MessageRoleEnum, MessageStatusEnum
 from schemas.message import MessageCreate, MessageResponse
 
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+redis_client = redis.from_url(REDIS_URL)
 # Создаем роутер для диалогов
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -104,6 +111,10 @@ def send_message(
     generate_reply.delay(assistant_message.id)
     # ТЗ просит возвращать статус "queued" и message_id
     # Наш MessageResponse как раз вернет данные assistant_message
+
+    cache_key = f"conversation:{conversation_id}:last_messages"
+    redis_client.delete(cache_key)
+
     return assistant_message
 
 from fastapi import HTTPException
@@ -129,6 +140,62 @@ def get_message_status(
         raise HTTPException(status_code=403, detail="Доступ запрещен")
 
     return message
+
+# SSE
+@router.get("/messages/{message_id}/stream")
+def stream_message(
+        message_id: int,
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id) # Защита от чужих глаз
+):
+    # 1. Проверяем, существует ли сообщение и принадлежит ли оно юзеру
+    message = db.query(Message).filter(Message.id == message_id).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+
+    chat = db.query(Conversation).filter(Conversation.id == message.conversation_id).first()
+    if not chat or chat.owner_user_id != user_id:
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
+
+    # Если сообщение уже готово (мы опоздали), нет смысла слушать радио, стрим окончен
+    if message.status == MessageStatusEnum.done:
+        return StreamingResponse(iter([f"data: [DONE]\n\n"]), media_type="text/event-stream")
+
+    # 2. Функция-генератор, которая слушает Redis и отдает данные в браузер
+    def event_generator():
+        # Подключаемся к механизму Pub/Sub
+        pubsub = redis_client.pubsub()
+        channel_name = f"chat_stream_{message_id}"
+
+        # Настраиваемся на нужную "радиоволну"
+        pubsub.subscribe(channel_name)
+
+        try:
+            # Бесконечно слушаем новые сообщения в канале
+            for redis_msg in pubsub.listen():
+                # pubsub.listen() при старте отдает системное сообщение об успешной подписке.
+                # Нам нужны только реальные сообщения (type == 'message')
+                if redis_msg["type"] == "message":
+                    # Данные из Redis приходят в виде байтов (b'text'), декодируем их в строку
+                    data = redis_msg["data"].decode("utf-8")
+
+                    if data == "[DONE]":
+                        # Если воркер закончил работу, отправляем финальный маркер и разрываем соединение
+                        yield f"data: [DONE]\n\n"
+                        break
+                    elif data == "[ERROR]":
+                        yield f"data: [ERROR]\n\n"
+                        break
+                    else:
+                        # Форматируем по стандарту SSE: "data: {наш_кусочек}\n\n"
+                        yield f"data: {data}\n\n"
+        finally:
+            # Обязательно отписываемся от канала, когда пользователь закрыл вкладку или ответ получен
+            pubsub.unsubscribe(channel_name)
+            pubsub.close()
+
+    # 3. Возвращаем специальный ответ, который держит соединение открытым
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.delete("/{id}")
