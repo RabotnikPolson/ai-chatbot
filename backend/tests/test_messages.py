@@ -12,7 +12,7 @@ def test_send_message(client):
 
     # 2. Act: Отправляем сообщение.
     # ГЛУШИМ СРАЗУ И ВОРКЕР, И REDIS
-    with patch("api.conversations.generate_reply.delay") as mock_task, \
+    with patch("services.chat_service.generate_reply.delay") as mock_task, \
             patch("api.conversations.redis_client.get", return_value=None), \
             patch("api.conversations.redis_client.setex"), \
             patch("api.conversations.redis_client.delete"):
@@ -43,7 +43,7 @@ def test_get_message_status(client):
     conv_id = conv_resp.json()["id"]
 
     # Отправляем сообщение (снова глушим и Celery, и Redis)
-    with patch("api.conversations.generate_reply.delay"), \
+    with patch("services.chat_service.generate_reply.delay"), \
             patch("api.conversations.redis_client.get", return_value=None), \
             patch("api.conversations.redis_client.setex"), \
             patch("api.conversations.redis_client.delete"):
