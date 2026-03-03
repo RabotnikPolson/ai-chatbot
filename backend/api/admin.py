@@ -43,6 +43,7 @@ def get_faqs(
 def delete_faq(
         id: int,
         db: Session = Depends(get_db),
+        admin: User = Depends(get_current_admin)
 ):
     # Ищем FAQ
     d_faq = db.query(FAQItem).filter(FAQItem.id == id).first()

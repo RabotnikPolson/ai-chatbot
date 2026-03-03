@@ -154,6 +154,11 @@ def generate_reply(self, message_id: int):
             return "Success"
     
         except Exception as e:
+            # Save these before rollback causes DetachedInstanceError
+            conversation_id = msg.conversation_id if msg else None
+            owner_user_id = msg.conversation.owner_user_id if msg and msg.conversation else None
+            message_obj_id = msg.id if msg else None
+            
             db.rollback()
             
             # Retry mechanism
@@ -163,18 +168,21 @@ def generate_reply(self, message_id: int):
             
             # If all retries failed or MaxRetriesExceededError
             if msg:
-                msg.status = MessageStatusEnum.failed
-                msg.error = str(e)
-                db.commit()
+                # We need to re-fetch or just update the status without lazy-loading relations
+                fail_msg = db.query(Message).filter(Message.id == message_obj_id).first()
+                if fail_msg:
+                    fail_msg.status = MessageStatusEnum.failed
+                    fail_msg.error = str(e)
+                    db.commit()
                 redis_client.publish(f"chat_stream_{message_id}", "[ERROR]")
 
             latency_ms = int((time.time() - start_time) * 1000) if 'start_time' in locals() else 0
             json_logger.error(f"Ошибка при генерации ответа: {str(e)}", extra={
                 "custom_fields": {
                     "request_id": "worker",
-                    "user_id": None, # Можно достать, если нужно
-                    "conversation_id": msg.conversation_id,
-                    "message_id": msg.id,
+                    "user_id": owner_user_id,
+                    "conversation_id": conversation_id,
+                    "message_id": message_obj_id,
                     "status": "failed",
                     "latency_ms": latency_ms
                 }
