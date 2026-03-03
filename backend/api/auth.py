@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from db.database import SessionLocal
 from schemas.user import UserCreate, UserResponse, UserLogin, Token, RefreshTokenRequest
 from db.models import User
-from services.security import get_password_hash, verify_password, create_access_token, create_refresh_token
+from services.security import get_password_hash, verify_password, create_access_token, create_refresh_token, SECRET_KEY, ALGORITHM
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
 
@@ -78,4 +78,5 @@ def get_my_profile(token: str = Depends(oauth2_scheme)):
     return {
         "message": "VALAR MARGULIS!",
         "your_token": token,
+        "refresh": refresh_token
     }

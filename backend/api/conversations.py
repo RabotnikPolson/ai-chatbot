@@ -25,6 +25,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 redis_client = redis.from_url(REDIS_URL)
 # Создаем роутер для диалогов
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+messages_router = APIRouter(prefix="/messages", tags=["messages"])
 
 json_logger = setup_json_logger("api_logger")
 
@@ -49,11 +50,15 @@ def create_conversation(
 # Эндпоинт 2: Получить список всех чатов текущего пользователя
 @router.get("/", response_model=List[ConversationResponse])
 def get_conversations(
+        page: int = 1,
+        limit: int = 20,
         db: Session = Depends(get_db),
         user_id: int = Depends(get_current_user_id) # Требуем токен!
 ):
-    # Ищем в базе только те чаты, у которых owner_user_id совпадает с нашим
-    return db.query(Conversation).filter(Conversation.owner_user_id == user_id).all()
+    # Ищем в базе только те чаты, у которых owner_user_id совпадает с нашим, с пагинацией
+    return db.query(Conversation).filter(
+        Conversation.owner_user_id == user_id
+    ).offset((page - 1) * limit).limit(limit).all()
 
 
 # Эндпоинт 3: Получить детали конкретного чата
@@ -115,9 +120,20 @@ def send_message(
     # ТЗ просит возвращать статус "queued" и message_id
     # Наш MessageResponse как раз вернет данные assistant_message
 
+    import json
+    # Instead of deleting, we get the current history, append the new message, and save it back
     cache_key = f"conversation:{conversation_id}:last_messages"
-    redis_client.delete(cache_key)
-
+    cached_history_raw = redis_client.get(cache_key)
+    if cached_history_raw:
+        try:
+            cached_history = json.loads(cached_history_raw)
+            cached_history.append({
+                "role": user_message.role.value,
+                "content": user_message.content
+            })
+            redis_client.setex(cache_key, 60, json.dumps(cached_history))
+        except json.JSONDecodeError:
+            redis_client.delete(cache_key) # In case of corrupted json
     #uid for http request
     req_id = str(uuid.uuid4())
 
@@ -137,7 +153,7 @@ def send_message(
 from fastapi import HTTPException
 
 # Эндпоинт 4: Получить статус и текст конкретного сообщения
-@router.get("/messages/{message_id}", response_model=MessageResponse)
+@messages_router.get("/{message_id}", response_model=MessageResponse)
 def get_message_status(
         message_id: int,
         db: Session = Depends(get_db),
@@ -159,7 +175,7 @@ def get_message_status(
     return message
 
 # SSE
-@router.get("/messages/{message_id}/stream")
+@messages_router.get("/{message_id}/stream")
 def stream_message(
         message_id: int,
         db: Session = Depends(get_db),

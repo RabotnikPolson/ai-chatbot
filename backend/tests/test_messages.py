@@ -13,6 +13,8 @@ def test_send_message(client):
     # 2. Act: Отправляем сообщение.
     # ГЛУШИМ СРАЗУ И ВОРКЕР, И REDIS
     with patch("api.conversations.generate_reply.delay") as mock_task, \
+            patch("api.conversations.redis_client.get", return_value=None), \
+            patch("api.conversations.redis_client.setex"), \
             patch("api.conversations.redis_client.delete"):
         response = client.post(
             f"/conversations/{conv_id}/messages",
@@ -42,6 +44,8 @@ def test_get_message_status(client):
 
     # Отправляем сообщение (снова глушим и Celery, и Redis)
     with patch("api.conversations.generate_reply.delay"), \
+            patch("api.conversations.redis_client.get", return_value=None), \
+            patch("api.conversations.redis_client.setex"), \
             patch("api.conversations.redis_client.delete"):
         msg_resp = client.post(
             f"/conversations/{conv_id}/messages",
@@ -51,7 +55,7 @@ def test_get_message_status(client):
     msg_id = msg_resp.json()["id"]
 
     # 2. Act: Дергаем эндпоинт получения статуса
-    response = client.get(f"/conversations/messages/{msg_id}", headers=headers)
+    response = client.get(f"/messages/{msg_id}", headers=headers)
 
     # 3. Assert
     assert response.status_code == 200

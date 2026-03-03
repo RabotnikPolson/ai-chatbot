@@ -11,6 +11,7 @@ app = FastAPI(title="AI ChatBot API")
 
 app.include_router(auth.router)
 app.include_router(conversations.router)
+app.include_router(conversations.messages_router)
 app.include_router(admin.router)
 
 @app.get("/")

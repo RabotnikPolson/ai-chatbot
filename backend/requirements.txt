@@ -14,3 +14,8 @@ python-multipart
 celery
 redis
 requests
+
+# Testing and Linting
+pytest
+flake8
+black

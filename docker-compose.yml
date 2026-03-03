@@ -30,6 +30,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://admin:admin_password@db:5432/chatbot
       - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your_super_secret_production_key
     volumes:
       - ./backend:/app
 
@@ -42,12 +43,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://admin:admin_password@db:5432/chatbot
       - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your_super_secret_production_key
       - PYTHONPATH=/app
     volumes:
       - ./backend:/app
     command: celery -A workers.celery_app worker --loglevel=info
-
-
 
   ollama:
     image: ollama/ollama:latest
@@ -57,6 +57,14 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  frontend:
+    # Placeholder for the frontend service to be developed later.
+    image: node:18-alpine
+    container_name: chatbot_frontend
+    ports:
+      - "3000:3000"
+    command: sh -c "echo 'Frontend is coming soon' && sleep infinity"
+
 volumes:
-    postgres_data:
-    ollama_data:
+  postgres_data:
+  ollama_data:

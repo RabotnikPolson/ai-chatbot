@@ -17,6 +17,13 @@ class OllamaProvider:
         """
         Метод принимает историю сообщений (контекст) и отправляет в Ollama.
         """
+        if len(messages) > 20:
+            messages = messages[-20:]
+            
+        total_length = sum(len(m.get("content", "")) for m in messages)
+        if total_length > 8000:
+            raise ValueError("Слишком длинный контекст сообщения. Превышен лимит в 8000 символов.")
+
         url = f"{self.base_url}/api/chat"
 
         payload = {
@@ -51,6 +58,13 @@ class OllamaProvider:
         Генерирует ответ потоком (стриминг).
         Возвращает генератор, который выдает текст по кусочкам.
         """
+        if len(messages) > 20:
+            messages = messages[-20:]
+            
+        total_length = sum(len(m.get("content", "")) for m in messages)
+        if total_length > 8000:
+            raise ValueError("Слишком длинный контекст сообщения. Превышен лимит в 8000 символов.")
+
         url = f"{self.base_url}/api/chat"
         payload = {
             "model": self.model,
