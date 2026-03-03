@@ -2,7 +2,7 @@ from passlib.context import CryptContext
 import jwt
 from datetime import datetime, timedelta, timezone
 
-SECRET_KEY = "super_secret_key_for_ai_chatbot"
+SECRET_KEY = "super_secret_key_for_ai_chatbot_v2"
 ALGORITHM = "HS256"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

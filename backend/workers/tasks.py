@@ -1,14 +1,23 @@
 import os
 import redis
 import json
-
 import logging
-logger = logging.getLogger(__name__)
+import time
+
+
+from sqlalchemy import or_  # Импортируем or_ для поиска ИЛИ
 
 from workers.celery_app import celery_app
 from db.database import SessionLocal
-from db.models import Message, MessageStatusEnum
+from db.models import Message, MessageStatusEnum, FAQItem  # Добавили FAQItem
 from providers.ollama import OllamaProvider
+
+from services.logger import setup_json_logger
+
+# Создаем логгер для воркера
+json_logger = setup_json_logger("worker_logger")
+
+logger = logging.getLogger(__name__)
 
 # Подключаемся к Redis напрямую
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -18,9 +27,13 @@ redis_client = redis.from_url(REDIS_URL)
 def generate_reply(message_id: int):
     db = SessionLocal()
     try:
+        # Получаем ПУСТОЕ сообщение ассистента, которое мы создали в API
         msg = db.query(Message).filter(Message.id == message_id).first()
         if not msg:
             return "Message not found"
+
+        if msg.status == MessageStatusEnum.done:
+            return "Already done"
 
         msg.status = MessageStatusEnum.processing
         db.commit()
@@ -54,8 +67,41 @@ def generate_reply(message_id: int):
 
             redis_client.setex(cache_key, 60, json.dumps(messages_for_ollama))
 
+        # === RAG-lite: БЛОК ЗНАНИЙ ИЗ FAQ ===
+        # Берем текст пользователя (он будет последним в списке сообщений)
+        user_query = ""
+        if messages_for_ollama and messages_for_ollama[-1]["role"] == "user":
+            user_query = messages_for_ollama[-1]["content"]
+
+        if user_query:
+            # Ищем совпадения в базе FAQ
+            search_text = f"%{user_query}%"
+            relevant_faqs = db.query(FAQItem).filter(
+                or_(
+                    FAQItem.title.ilike(search_text),
+                    FAQItem.content.ilike(search_text)
+                )
+            ).limit(3).all()
+
+            if relevant_faqs:
+                # Если что-то нашли, собираем в текст
+                faq_context = "\n\n".join([f"Вопрос: {faq.title}\nОтвет: {faq.content}" for faq in relevant_faqs])
+
+                system_prompt = (
+                    "Ты — корпоративный ИИ-помощник. "
+                    "Используй следующую информацию из базы знаний компании (FAQ) для ответа на вопрос пользователя:\n\n"
+                    f"{faq_context}\n\n"
+                    "Отвечай вежливо и опирайся на предоставленные знания."
+                )
+
+                # Вставляем системный промпт в самое начало контекста
+                messages_for_ollama.insert(0, {
+                    "role": "system",
+                    "content": system_prompt
+                })
+
+        start_time = time.time()
         # === 2. БЛОК ГЕНЕРАЦИИ И СТРИМИНГА ===
-        # Вызываем провайдер только один раз!
         provider = OllamaProvider(model="qwen2.5:0.5b")
 
         full_answer = ""
@@ -76,6 +122,20 @@ def generate_reply(message_id: int):
         msg.provider = "ollama"
         db.commit()
 
+        # Считаем разницу во времени и переводим в миллисекунды
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        json_logger.info("Генерация ответа успешно завершена", extra={
+            "custom_fields": {
+                "request_id": "worker",
+                "user_id": msg.conversation.owner_user_id if msg.conversation else None,
+                "conversation_id": msg.conversation_id,
+                "message_id": msg.id,
+                "status": "done",
+                "latency_ms": latency_ms
+            }
+        })
+
         return "Success"
 
     except Exception as e:
@@ -85,6 +145,18 @@ def generate_reply(message_id: int):
             msg.error = str(e)
             db.commit()
             redis_client.publish(f"chat_stream_{message_id}", "[ERROR]")
+
+            latency_ms = int((time.time() - start_time) * 1000) if 'start_time' in locals() else 0
+            json_logger.error(f"Ошибка при генерации ответа: {str(e)}", extra={
+                "custom_fields": {
+                    "request_id": "worker",
+                    "user_id": None, # Можно достать, если нужно
+                    "conversation_id": msg.conversation_id,
+                    "message_id": msg.id,
+                    "status": "failed",
+                    "latency_ms": latency_ms
+                }
+            })
         raise e
     finally:
         db.close()

@@ -76,6 +76,6 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
 @router.get("/me")
 def get_my_profile(token: str = Depends(oauth2_scheme)):
     return {
-        "message": "Ура! Ты прошел фейс-контроль",
+        "message": "VALAR MARGULIS!",
         "your_token": token,
     }

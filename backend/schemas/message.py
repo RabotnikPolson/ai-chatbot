@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
 from db.models import MessageRoleEnum, MessageStatusEnum
@@ -21,5 +21,6 @@ class MessageResponse(BaseModel):
     error: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True # Позволяет Pydantic читать данные напрямую из модели базы данных
+    # class Config:
+    #     from_attributes = True # Позволяет Pydantic читать данные напрямую из модели базы данных
+    model_config = ConfigDict(from_attributes = True)

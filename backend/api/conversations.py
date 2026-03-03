@@ -1,3 +1,6 @@
+import uuid
+from services.logger import setup_json_logger
+
 import os
 import redis
 from fastapi.responses import StreamingResponse
@@ -22,6 +25,8 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 redis_client = redis.from_url(REDIS_URL)
 # Создаем роутер для диалогов
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+json_logger = setup_json_logger("api_logger")
 
 def get_current_user_id(token: str = Depends(oauth2_scheme)):
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -100,9 +105,7 @@ def send_message(
         content="", # Пока пустое, бот еще думает
         status=MessageStatusEnum.queued
     )
-    db.add(assistant_message)
-    db.commit()
-    db.refresh(assistant_message) # Обновляем, чтобы получить его сгенерированный ID
+
 
     db.add(assistant_message)
     db.commit()
@@ -114,6 +117,20 @@ def send_message(
 
     cache_key = f"conversation:{conversation_id}:last_messages"
     redis_client.delete(cache_key)
+
+    #uid for http request
+    req_id = str(uuid.uuid4())
+
+    json_logger.info("Сообщение поставлено в очередь", extra={
+        "custom_fields": {
+            "request_id": req_id,
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "message_id": assistant_message.id,
+            "status": "queued",
+            "latency_ms": 0
+        }
+    })
 
     return assistant_message
 

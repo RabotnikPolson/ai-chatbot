@@ -23,7 +23,7 @@ def get_current_admin(
 def create_faq(
         faq_data: FAQCreate,
         db: Session = Depends(get_db),
-        admin: User = Depends(get_current_admin) # Требуем, чтобы юзер прошел фейс-контроль!
+        admin: User = Depends(get_current_admin)
 ):
     new_faq = FAQItem(title=faq_data.title, content=faq_data.content)
     db.add(new_faq)
