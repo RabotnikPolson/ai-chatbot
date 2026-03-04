@@ -8,6 +8,7 @@ import { mockChats, mockMessages, mockUser } from '../data/mockData';
 interface ChatStore {
     // State
     user: User | null;
+    accessToken: string | null;
     chats: Chat[];
     activeChatId: string | null;
     messages: Message[];
@@ -15,6 +16,7 @@ interface ChatStore {
 
     // Actions
     setUser: (user: User | null) => void;
+    setAccessToken: (token: string | null) => void;
     setChats: (chats: Chat[]) => void;
     setActiveChatId: (id: string | null) => void;
     setMessages: (messages: Message[]) => void;
@@ -38,6 +40,7 @@ const useChatStore = create<ChatStore>()(
         (set) => ({
             // ── Initial State ──────────────────────────────────────────────────────
             user: null,
+            accessToken: null,
             chats: [],
             activeChatId: null,
             messages: [],
@@ -45,6 +48,7 @@ const useChatStore = create<ChatStore>()(
 
             // ── Setters ────────────────────────────────────────────────────────────
             setUser: (user) => set({ user }, false, 'setUser'),
+            setAccessToken: (accessToken) => set({ accessToken }, false, 'setAccessToken'),
             setChats: (chats) => set({ chats }, false, 'setChats'),
             setActiveChatId: (id) => set({ activeChatId: id }, false, 'setActiveChatId'),
             setMessages: (messages) => set({ messages }, false, 'setMessages'),
@@ -89,6 +93,7 @@ const useChatStore = create<ChatStore>()(
                 set(
                     {
                         user: mockUser,
+                        accessToken: 'mock.access.token',
                         chats: mockChats,
                         activeChatId: firstChatId,
                         messages: mockMessages,
