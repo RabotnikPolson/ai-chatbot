@@ -31,15 +31,17 @@ def login_user(response: Response, form_data: OAuth2PasswordRequestForm = Depend
         httponly=True,
         samesite="lax",
         secure=False, # Set to True in production (HTTPS)
-        max_age=7 * 24 * 60 * 60 # 7 days
+        max_age=7 * 24 * 60 * 60, # 7 days
+        path="/"
     )
     
     return {
         "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
         "token_type": "bearer"
     }
 
-@router.post("/refresh", response_model=Token)
+@router.post("/refresh")
 def refresh_token(response: Response, refresh_token: str = Cookie(None), db: Session = Depends(get_db)):
     if not refresh_token:
         raise HTTPException(
@@ -56,17 +58,19 @@ def refresh_token(response: Response, refresh_token: str = Cookie(None), db: Ses
         httponly=True,
         samesite="lax",
         secure=False,
-        max_age=7 * 24 * 60 * 60
+        max_age=7 * 24 * 60 * 60,
+        path="/"
     )
     
     return {
         "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
         "token_type": "bearer"
     }
 
 @router.post("/logout")
 def logout_user(response: Response):
-    response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
+    response.delete_cookie(key="refresh_token", httponly=True, samesite="lax", path="/")
     return {"message": "Successfully logged out"}
 
 @router.get("/me")

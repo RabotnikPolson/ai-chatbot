@@ -48,6 +48,6 @@ class AuthService:
             raise HTTPException(status_code=401, detail="Пользователь не найден")
 
         access_token = create_access_token(data={"sub": str(user.id)})
-        return {"access_token": access_token}
+        return {"access_token": access_token, "refresh_token": refresh_token}
 
 auth_service = AuthService()

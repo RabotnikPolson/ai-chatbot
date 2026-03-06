@@ -1,6 +1,8 @@
 import axios from 'axios';
 import useChatStore from '../store/useChatStore';
 
+axios.defaults.withCredentials = true;
+
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
     withCredentials: true, // httpOnly cookie for Refresh Token
