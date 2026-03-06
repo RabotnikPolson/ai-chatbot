@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import api from '../api/axiosInstance';
 import useChatStore from '../store/useChatStore';
-import { mockChats, mockMessages } from '../data/mockData';
 import type { User as UserType } from '../types';
 
 // ─── Shared Input ─────────────────────────────────────────────────────────────
@@ -63,8 +63,6 @@ export default function AuthPage() {
 
     const setUser = useChatStore((s) => s.setUser);
     const setAccessToken = useChatStore((s) => s.setAccessToken);
-    const setChats = useChatStore((s) => s.setChats);
-    const setMessages = useChatStore((s) => s.setMessages);
     const setWsStatus = useChatStore((s) => s.setWsStatus);
 
     const validate = (): string => {
@@ -94,41 +92,44 @@ export default function AuthPage() {
 
         setLoading(true);
 
-        // ── TODO: replace with real API call ──────────────────────────────────
-        // Login:    POST /api/v1/auth/login    { email, password }
-        // Register: POST /api/v1/auth/register { email, password, name }
-
-        // Mock Duplicate Registration Check
-        const normalizedEmail = email.trim().toLowerCase();
-        if (tab === 'register') {
-            const usersStr = localStorage.getItem('mockUsers') || '[]';
-            const mockUsers = JSON.parse(usersStr) as string[];
-            if (mockUsers.includes(normalizedEmail)) {
-                setError('Пользователь с таким email уже существует');
-                setLoading(false);
-                return;
+        try {
+            if (tab === 'register') {
+                // Real Registration call
+                await api.post('/auth/register', {
+                    email: email.trim(),
+                    password,
+                    name: name.trim() || email.split('@')[0]
+                });
             }
-            mockUsers.push(normalizedEmail);
-            localStorage.setItem('mockUsers', JSON.stringify(mockUsers));
+
+            // Real Login call using URLSearchParams for OAuth2PasswordRequestForm
+            const params = new URLSearchParams();
+            params.append('username', email.trim());
+            params.append('password', password);
+
+            const loginRes = await api.post('/auth/login', params, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            const { access_token } = loginRes.data;
+
+            // Optional: fetch user info, or just mock structural state for now
+            const user: UserType = {
+                id: email.trim(),
+                email: email.trim(),
+                name: tab === 'register' ? name.trim() : email.split('@')[0],
+            };
+
+            setUser(user);
+            setAccessToken(access_token);
+            setWsStatus('connected');
+
+            navigate('/', { replace: true });
+        } catch (err: any) {
+            console.error('Auth error:', err);
+            setError(err.response?.data?.detail || 'Ошибка авторизации. Проверьте данные и попробуйте снова.');
+        } finally {
+            setLoading(false);
         }
-
-        await new Promise((r) => setTimeout(r, 800)); // simulated delay
-
-        // Mock login: accept any credentials, load mock data
-        const user: UserType = {
-            id: 'user-1',
-            email: normalizedEmail,
-            name: tab === 'register' ? name.trim() : normalizedEmail.split('@')[0],
-        };
-        setUser(user);
-        setAccessToken('mock.access.token');
-        setChats(mockChats);
-        setMessages(mockMessages);
-        setWsStatus('connected');
-        // ─────────────────────────────────────────────────────────────────────
-
-        setLoading(false);
-        navigate('/', { replace: true });
     };
 
     return (

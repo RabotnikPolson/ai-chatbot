@@ -1,7 +1,7 @@
 import { Plus, Wifi, WifiOff, Loader2 } from 'lucide-react';
 import useChatStore from '../../store/useChatStore';
 import { ChatItem } from './ChatItem';
-import { useLogout } from '../../App';
+import { useLogout } from '../../hooks/useLogout';
 import type { Chat } from '../../types';
 
 // ─── WS Status Badge ──────────────────────────────────────────────────────────

@@ -7,9 +7,6 @@ export default function InputBar() {
     const [text, setText] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const activeChatId = useChatStore((s) => s.activeChatId);
-    const addMessage = useChatStore((s) => s.addMessage);
-    const generateChatTitle = useChatStore((s) => s.generateChatTitle);
-    const updateChat = useChatStore((s) => s.updateChat);
 
     const autoResize = () => {
         const ta = textareaRef.current;
@@ -20,23 +17,43 @@ export default function InputBar() {
 
     const handleSend = () => {
         const trimmed = text.trim();
-        if (!trimmed || !activeChatId) return;
+        if (!trimmed) return;
 
+        let targetChatId = activeChatId;
+        const store = useChatStore.getState();
+
+        // 1. If there's no active chat, create one!
+        if (!targetChatId) {
+            targetChatId = `chat-${Date.now()}`;
+            const newChat = {
+                id: targetChatId,
+                title: store.generateChatTitle(trimmed),
+                updatedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+            };
+            store.addChat(newChat);
+            store.setActiveChatId(targetChatId);
+        } else {
+            // 2. Only rename existing chat if it's explicitly "Новый чат"
+            const chat = store.chats.find(c => c.id === targetChatId);
+            if (chat && chat.title === 'Новый чат') {
+                store.updateChat(targetChatId, {
+                    title: store.generateChatTitle(trimmed),
+                    updatedAt: new Date().toISOString(),
+                });
+            }
+        }
+
+        // 3. Add the message
         const newMsg: Message = {
             id: `msg-${Date.now()}`,
-            chatId: activeChatId,
+            chatId: targetChatId,
             role: 'user',
             content: trimmed,
             createdAt: new Date().toISOString(),
         };
 
-        addMessage(newMsg);
-
-        // Auto-generate title from first 3 words of first user message
-        updateChat(activeChatId, {
-            title: generateChatTitle(trimmed),
-            updatedAt: new Date().toISOString(),
-        });
+        store.addMessage(newMsg);
 
         setText('');
         if (textareaRef.current) {
@@ -51,7 +68,7 @@ export default function InputBar() {
         }
     };
 
-    const canSend = text.trim().length > 0 && activeChatId !== null;
+    const canSend = text.trim().length > 0;
 
     return (
         <div className="px-4 pb-5 pt-3">
@@ -73,8 +90,7 @@ export default function InputBar() {
                             autoResize();
                         }}
                         onKeyDown={handleKeyDown}
-                        placeholder={activeChatId ? 'Введите сообщение...' : 'Выберите или создайте чат'}
-                        disabled={!activeChatId}
+                        placeholder="Введите сообщение..."
                         rows={1}
                         className="input-area disabled:opacity-40 disabled:cursor-not-allowed"
                     />
