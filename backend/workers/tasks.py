@@ -106,6 +106,8 @@ def generate_reply(self, message_id: int):
     
             full_answer = ""
             channel_name = f"chat_stream_{message_id}"
+
+            time.sleep(1)
     
             # Итерируемся по генератору (получаем кусочки текста)
             for chunk in provider.generate_stream(messages=messages_for_ollama):
