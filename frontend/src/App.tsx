@@ -1,13 +1,24 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import ChatPage from './pages/ChatPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import Layout from './components/Layout';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<ChatPage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <ChatPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );
