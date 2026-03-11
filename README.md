@@ -23,4 +23,16 @@ This is the backend and soon-to-be frontend for the AI Chatbot application.
 - **db**: PostgreSQL database.
 - **redis**: Used as a Celery broker and for Pub/Sub SSE streaming.
 - **ollama**: Local LLM provider.
-- **frontend**: Next.js application (Work In Progress).
+- **frontend**: React + TypeScript + Vite frontend.
+
+## Code Quality & Linters
+The project uses `pre-commit` to enforce code quality across both the backend (Python) and frontend (TypeScript/React).
+To set up the pre-commit hooks locally:
+
+1. Ensure you have `pre-commit` installed (`pip install pre-commit`).
+2. Run `pre-commit install` in the root directory.
+
+To run the linters manually on all files:
+```bash
+pre-commit run --all-files
+```
