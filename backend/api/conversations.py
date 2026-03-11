@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 import jwt
+import json
 
 from schemas.conversation import ConversationCreate, ConversationResponse
 from api.auth import oauth2_scheme, get_db
@@ -100,7 +101,7 @@ def stream_message(
                         yield f"data: [ERROR]\n\n"
                         break
                     else:
-                        yield f"data: {data}\n\n"
+                        yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         finally:
             pubsub.unsubscribe(channel_name)
             pubsub.close()

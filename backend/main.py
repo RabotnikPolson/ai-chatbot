@@ -4,10 +4,31 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from api import auth, conversations, admin
 from api.auth import get_db
 
 app = FastAPI(title="AI ChatBot API")
+
+app.include_router(auth.router)
+app.include_router(conversations.router)
+app.include_router(conversations.messages_router)
+app.include_router(admin.router)
+
+@app.get("/")
+def read_root():
+    return {"message": "Chatbot API пашет, а ты нет."}
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # Укажи порты фронтенда
+    allow_credentials=True,
+    allow_methods=["*"], # Разрешить все методы (GET, POST, OPTIONS и т.д.)
+    allow_headers=["*"], # Разрешить все заголовки
+)
+# ----------------------
 
 app.include_router(auth.router)
 app.include_router(conversations.router)
