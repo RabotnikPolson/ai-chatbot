@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 import api from '../api/axios';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 // @ts-ignore
@@ -89,22 +90,49 @@ const ChatPage: React.FC = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    useEffect(() => {
-        const fetchMessages = async () => {
-            if (activeConversationId === null) {
-                setMessages([]);
-                return;
-            }
-            try {
-                const response = await api.get(`/conversations/${activeConversationId}/messages`);
-                setMessages(response.data);
-            } catch (error) {
-                console.error('Ошибка загрузки сообщений:', error);
-            }
-        };
+    const { data: fetchedMessages } = useQuery({
+        queryKey: ['messages', activeConversationId],
+        queryFn: async () => {
+            if (activeConversationId === null) return [];
+            const response = await api.get(`/conversations/${activeConversationId}/messages`);
+            return response.data;
+        },
+        enabled: activeConversationId !== null,
+    });
 
-        fetchMessages();
+    // Ref для хранения активных стримов, чтобы можно было отменить их при смене чата
+    const activeStreams = useRef<Map<number, AbortController>>(new Map());
+
+    useEffect(() => {
+        // Очищаем стримы ПРИ СМЕНЕ активного чата или unmount, чтобы не было гонок
+        return () => {
+            activeStreams.current.forEach(ctrl => ctrl.abort());
+            activeStreams.current.clear();
+        };
     }, [activeConversationId]);
+
+    useEffect(() => {
+        if (fetchedMessages) {
+            setMessages(fetchedMessages);
+
+            // Авто-реконнект к активным генерациям
+            fetchedMessages.forEach((msg: Message) => {
+                if (msg.role === 'assistant' && (msg.status === 'processing' || msg.status === 'queued') && activeConversationId !== null) {
+                    if (!activeStreams.current.has(msg.id)) {
+                        const controller = new AbortController();
+                        activeStreams.current.set(msg.id, controller);
+
+                        streamMessage(msg.id, activeConversationId, controller.signal).finally(() => {
+                            activeStreams.current.delete(msg.id);
+                        });
+                    }
+                }
+            });
+
+        } else if (activeConversationId === null) {
+            setMessages([]);
+        }
+    }, [fetchedMessages, activeConversationId]);
 
     const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setInputText(e.target.value);
@@ -119,11 +147,12 @@ const ChatPage: React.FC = () => {
         }
     }, [inputText]);
 
-    const streamMessage = async (messageId: number, chatId: number) => {
+    const streamMessage = async (messageId: number, chatId: number, signal?: AbortSignal) => {
         const token = useAuthStore.getState().token;
         try {
             const response = await fetch(`http://localhost:8000/messages/${messageId}/stream`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                signal
             });
 
             if (!response.body) return;
@@ -137,7 +166,8 @@ const ChatPage: React.FC = () => {
                 if (done) break;
 
                 // { stream: true } спасает русские буквы от разрыва пополам!
-                buffer += decoder.decode(value, { stream: true });
+                const decoded = decoder.decode(value, { stream: true });
+                buffer += decoded;
 
                 const parts = buffer.split('\n\n');
                 // Последний элемент всегда оставляем в буфере, так как чанк мог оборваться на середине слова
@@ -154,12 +184,10 @@ const ChatPage: React.FC = () => {
                             return;
                         }
 
-                        // Добавляем кусочки текста в UI
+                        // Бэкенд теперь присылает ВЕСЬ сгенерированный текст целиком,
+                        // поэтому просто заменяем content, а не склеиваем. Это спасает от дублей.
                         setMessages(prev => prev.map(msg => {
                             if (msg.id === messageId) {
-                                // Если там была заглушка, очищаем её
-                                const currentContent = (!msg.content || msg.content === 'Ожидание ответа...') ? '' : msg.content;
-                                
                                 let cleanPayload = payload;
                                 if (payload.startsWith('"') && payload.endsWith('"')) {
                                     try {
@@ -171,7 +199,7 @@ const ChatPage: React.FC = () => {
                                     cleanPayload = payload.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
                                 }
 
-                                return { ...msg, content: currentContent + cleanPayload };
+                                return { ...msg, content: cleanPayload };
                             }
                             return msg;
                         }));
@@ -179,7 +207,43 @@ const ChatPage: React.FC = () => {
                 }
             }
         } catch (error) {
-            console.error("Ошибка стриминга:", error);
+            if (error instanceof Error && error.name === 'AbortError') {
+                console.log('Стрим прерван при переключении чата');
+            } else {
+                console.error("Ошибка стриминга:", error);
+            }
+        }
+    };
+
+    const handleRetry = async (failedMsg: Message) => {
+        if (!activeConversationId || isSending) return;
+        setIsSending(true);
+        try {
+            // Find the previous user message that caused this failure
+            const msgIndex = messages.findIndex(m => m.id === failedMsg.id);
+            if (msgIndex <= 0) return;
+            
+            const prevUserMsg = messages[msgIndex - 1];
+            if (prevUserMsg.role !== 'user') return;
+
+            // Retrying means sending the text again
+            await api.post(`/conversations/${activeConversationId}/messages`, {
+                text: prevUserMsg.content
+            });
+
+            // Refetch messages and trigger stream
+            const resp = await api.get(`/conversations/${activeConversationId}/messages`);
+            const data = resp.data;
+            setMessages(data);
+
+            const lastAssistantMsg = data.slice().reverse().find((m: Message) => m.role === 'assistant');
+            if (lastAssistantMsg && lastAssistantMsg.status !== 'done') {
+                streamMessage(lastAssistantMsg.id, activeConversationId);
+            }
+        } catch (error) {
+            console.error('Ошибка при повторе сообщения:', error);
+        } finally {
+            setIsSending(false);
         }
     };
 
@@ -276,7 +340,7 @@ const ChatPage: React.FC = () => {
                                 <div className="shrink-0 w-8 h-8 mt-1">
                                     {AI_ICON}
                                 </div>
-                                <div className="text-[#e3e3e3] text-[15px] leading-relaxed max-w-[85%] mt-1 overflow-hidden">
+                                <div className="text-[#e3e3e3] text-[15px] leading-relaxed max-w-[85%] mt-1 overflow-hidden flex flex-col gap-2">
                                     <div className="prose prose-invert max-w-none break-words overflow-x-auto">
                                         <ReactMarkdown 
                                             remarkPlugins={[remarkGfm]} 
@@ -285,8 +349,48 @@ const ChatPage: React.FC = () => {
                                                 code: CodeBlock
                                             }}
                                         >
-                                            {msg.content || 'Ожидание ответа...'}
+                                            {msg.content || (msg.status === 'failed' ? 'Произошла ошибка при генерации ответа.' : 'Ожидание ответа...')}
                                         </ReactMarkdown>
+                                    </div>
+                                    
+                                    {/* Индикаторы статусов */}
+                                    <div className="flex items-center gap-2 mt-1">
+                                        {msg.status === 'queued' && (
+                                            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex items-center gap-1 w-max">
+                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                В очереди...
+                                            </span>
+                                        )}
+                                        {msg.status === 'processing' && (
+                                            <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full flex items-center gap-1 w-max">
+                                                <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Генерация...
+                                            </span>
+                                        )}
+                                        {msg.status === 'failed' && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full flex items-center gap-1 w-max">
+                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    Ошибка
+                                                </span>
+                                                <button 
+                                                    onClick={() => handleRetry(msg)}
+                                                    className="text-xs bg-[#2D2E31] hover:bg-[#3D3E41] text-gray-200 px-3 py-1 rounded-full flex items-center gap-1 transition-colors"
+                                                >
+                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                    </svg>
+                                                    Повторить
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

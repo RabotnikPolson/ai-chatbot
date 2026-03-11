@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
 import api from '../api/axios';
+import { useQuery } from '@tanstack/react-query';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -18,23 +19,25 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         setLoading
     } = useChatStore();
 
-    useEffect(() => {
-        const fetchConversations = async () => {
-            setLoading(true);
-            try {
-                const response = await api.get('/conversations/');
-                const data = Array.isArray(response.data) ? response.data : response.data.items || [];
-                const sortedData = data.sort((a: any, b: any) => b.id - a.id);
-                setConversations(sortedData);
-            } catch (error) {
-                console.error('Ошибка загрузки чатов:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
+    const { isLoading, data: fetchedConversations } = useQuery({
+        queryKey: ['conversations'],
+        queryFn: async () => {
+            const response = await api.get('/conversations/');
+            const data = Array.isArray(response.data) ? response.data : response.data.items || [];
+            const sortedData = data.sort((a: any, b: any) => b.id - a.id);
+            return sortedData;
+        }
+    });
 
-        fetchConversations();
-    }, [setConversations, setLoading]);
+    useEffect(() => {
+        setLoading(isLoading);
+    }, [isLoading, setLoading]);
+
+    useEffect(() => {
+        if (fetchedConversations) {
+            setConversations(fetchedConversations);
+        }
+    }, [fetchedConversations, setConversations]);
 
     const handleDeleteChat = async (e: React.MouseEvent, id: number) => {
         e.stopPropagation();

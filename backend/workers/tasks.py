@@ -110,8 +110,12 @@ def generate_reply(self, message_id: int):
             # Итерируемся по генератору (получаем кусочки текста)
             for chunk in provider.generate_stream(messages=messages_for_ollama):
                 full_answer += chunk # Приклеиваем кусочек к полному ответу
-                # Вещаем этот кусочек в радиоканал Redis!
-                redis_client.publish(channel_name, chunk)
+                
+                # Сохраняем промежуточный ответ для возможности переподключения клиента
+                redis_client.setex(f"chat_partial_{message_id}", 3600, full_answer)
+                
+                # Вещаем ВЕСЬ накопленный текст (чтобы избегать гонок на фронте с конкатенацией)
+                redis_client.publish(channel_name, full_answer)
     
             # Сигнал окончания стрима
             redis_client.publish(channel_name, "[DONE]")

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../api/axios';
 
 const LoginPage: React.FC = () => {
-    const setToken = useAuthStore((state) => state.setToken);
+    const setTokens = useAuthStore((state) => state.setTokens);
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
     const navigate = useNavigate();
 
@@ -40,8 +40,8 @@ const LoginPage: React.FC = () => {
                 },
             });
 
-            if (response.data && response.data.access_token) {
-                setToken(response.data.access_token);
+            if (response.data && response.data.access_token && response.data.refresh_token) {
+                setTokens(response.data.access_token, response.data.refresh_token);
                 navigate('/');
             } else {
                 setError('Неверный формат ответа от сервера');
@@ -135,6 +135,15 @@ const LoginPage: React.FC = () => {
                                 'Войти'
                             )}
                         </button>
+                    </div>
+
+                    <div className="flex items-center justify-center mt-4">
+                        <div className="text-sm">
+                            <span className="text-gray-400">Нет аккаунта? </span>
+                            <Link to="/register" className="font-medium text-blue-500 hover:text-blue-400 transition-colors">
+                                Зарегистрироваться
+                            </Link>
+                        </div>
                     </div>
                 </form>
             </div>

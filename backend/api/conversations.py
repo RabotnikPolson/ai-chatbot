@@ -89,6 +89,11 @@ def stream_message(
         pubsub = redis_client.pubsub()
         channel_name = f"chat_stream_{message_id}"
         pubsub.subscribe(channel_name)
+        
+        # Сначала достаем то, что уже могло сгенерироваться к моменту подключения
+        partial = redis_client.get(f"chat_partial_{message_id}")
+        if partial:
+            yield f"data: {json.dumps(partial.decode('utf-8'), ensure_ascii=False)}\n\n"
 
         try:
             for redis_msg in pubsub.listen():
@@ -101,6 +106,7 @@ def stream_message(
                         yield f"data: [ERROR]\n\n"
                         break
                     else:
+                        # Теперь data - это полный накопившийся ответ 
                         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         finally:
             pubsub.unsubscribe(channel_name)
