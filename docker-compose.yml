@@ -58,12 +58,15 @@ services:
       - ollama_data:/root/.ollama
 
   frontend:
-    # Placeholder for the frontend service to be developed later.
-    image: node:18-alpine
+    build: ./frontend
     container_name: chatbot_frontend
     ports:
-      - "3000:3000"
-    command: sh -c "echo 'Frontend is coming soon' && sleep infinity"
+      - "5173:5173"
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 volumes:
   postgres_data:

@@ -6,16 +6,31 @@ This is the backend and soon-to-be frontend for the AI Chatbot application.
 - Docker and Docker Compose
 - Python 3.10+ (for local development)
 
-## How to Run
+## Как запустить проект (Быстрый старт)
 
-1. Clone the repository.
-2. Build and start the services using Docker Compose:
+1. Клонируйте репозиторий.
+2. Соберите и запустите все контейнеры одной командой:
    ```bash
-   docker-compose up --build -d
+   docker compose up --build -d
    ```
-3. The API will be available at `http://localhost:8000`.
-4. The Redis and PostgreSQL databases will be spun up automatically.
-5. The Ollama container will run locally for the LLM inference. Ensure you have the model pulled: `docker exec -it chatbot_ollama ollama run qwen2.5:0.5b`
+3. **Как применить миграции базы данных:**
+   ```bash
+   docker compose exec api alembic upgrade head
+   ```
+4. **Как скачать/загрузить модель в Ollama и проверить:**
+   ```bash
+   docker compose exec ollama ollama run qwen2.5:0.5b
+   ```
+   *Вы можете задать боту любой вопрос прямо в терминале, чтобы убедиться, что модель отвечает.*
+
+5. **Как запустить тесты:**
+   ```bash
+   docker compose exec api pytest
+   ```
+
+## Доступные сервисы после запуска
+- **Frontend (UI)**: `http://localhost:5173`
+- **Backend (API)**: `http://localhost:8000` (Документация Swagger: `http://localhost:8000/docs`)
 
 ## Services
 - **api**: FastAPI backend serving HTTP and SSE endpoints.
