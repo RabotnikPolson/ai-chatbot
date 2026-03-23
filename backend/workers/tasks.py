@@ -148,12 +148,13 @@ def generate_reply(self, message_id: int, temperature: float = 0.7):
                     pass
     
     
+            latency_ms = int((time.time() - start_time) * 1000)
+
             msg.content = full_answer
             msg.status = MessageStatusEnum.done
             msg.provider = "ollama"
+            msg.latency_ms = latency_ms
             db.commit()
-    
-            latency_ms = int((time.time() - start_time) * 1000)
     
             json_logger.info("Генерация ответа успешно завершена", extra={
                 "custom_fields": {

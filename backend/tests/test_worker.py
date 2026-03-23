@@ -52,3 +52,39 @@ def test_worker_idempotency(db_session):
 
     # 3. Assert: Воркер должен отказаться работать и вернуть нашу фразу "Already done"
     assert result == "Already done"
+
+
+def test_worker_persists_latency_on_success(db_session):
+    user = User(email="worker_latency@test.com", password_hash="123")
+    db_session.add(user)
+    db_session.commit()
+
+    conv = Conversation(owner_user_id=user.id, title="Latency test")
+    db_session.add(conv)
+    db_session.commit()
+
+    msg = Message(
+        conversation_id=conv.id,
+        role="assistant",
+        content="",
+        status=MessageStatusEnum.queued,
+    )
+    db_session.add(msg)
+    db_session.commit()
+
+    with patch("workers.tasks.SessionLocal", return_value=db_session), \
+            patch("workers.tasks.redis_client.get", return_value=None), \
+            patch("workers.tasks.redis_client.setex"), \
+            patch("workers.tasks.redis_client.publish"), \
+            patch("workers.tasks.OllamaProvider.generate_stream", return_value=iter(["Hel", "lo"])):
+        result = generate_reply(msg.id)
+
+    updated = db_session.query(Message).filter(Message.id == msg.id).first()
+
+    assert result == "Success"
+    assert updated is not None
+    assert updated.status == MessageStatusEnum.done
+    assert updated.content == "Hello"
+    assert updated.provider == "ollama"
+    assert updated.latency_ms is not None
+    assert updated.latency_ms >= 0
