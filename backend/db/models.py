@@ -35,32 +35,27 @@ class Conversation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String, nullable=True) # Название чата (может быть пустым)
+    title = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     owner = relationship("User", back_populates="conversations")
-    # Это позволит нам обращаться к списку сообщений чата вот так: my_chat.messages
-    # если мы удалим чат, база автоматически удалит все связанные с ним сообщения
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
 
 class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    # Вот тот самый внешний ключ, про который ты говорил:
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
 
     role = Column(Enum(MessageRoleEnum), nullable=False)
-    content = Column(String, nullable=False) # Текст сообщения
+    content = Column(String, nullable=False)
     status = Column(Enum(MessageStatusEnum), default=MessageStatusEnum.queued)
 
-    # Поля для аналитики и дебага нейросети (пока могут быть пустыми)
     provider = Column(String, default="ollama")
     latency_ms = Column(Integer, nullable=True)
     error = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Связь для Питона, чтобы мы могли писать message.conversation
     conversation = relationship("Conversation", back_populates="messages")
 
 class FAQItem(Base):
@@ -69,5 +64,5 @@ class FAQItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     content = Column(String, nullable=False)
-    tags = Column(String, nullable=True) # Добавлено по ТЗ
+    tags = Column(String, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

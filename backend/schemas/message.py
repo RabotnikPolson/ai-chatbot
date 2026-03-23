@@ -6,6 +6,12 @@ from db.models import MessageRoleEnum, MessageStatusEnum
 # 1. Что мы ждем от фронтенда при отправке сообщения
 class MessageCreate(BaseModel):
     text: str
+    temperature: Optional[float] = None
+
+
+class SendMessageResponse(BaseModel):
+    message_id: int
+    status: MessageStatusEnum
 
 # 2. Что мы возвращаем на фронтенд
 class MessageResponse(BaseModel):
@@ -21,6 +27,4 @@ class MessageResponse(BaseModel):
     error: Optional[str] = None
     created_at: datetime
 
-    # class Config:
-    #     from_attributes = True # Позволяет Pydantic читать данные напрямую из модели базы данных
     model_config = ConfigDict(from_attributes = True)

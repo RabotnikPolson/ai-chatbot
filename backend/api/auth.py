@@ -8,6 +8,7 @@ from services.auth_service import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -19,6 +20,7 @@ def get_db():
 def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
     return AuthService.register_user(db, user_data)
 
+
 @router.post("/login", response_model=Token)
 def login_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = AuthService.authenticate_user(db, form_data.username, form_data.password)
@@ -26,11 +28,13 @@ def login_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = D
     tokens["token_type"] = "bearer"
     return tokens
 
+
 @router.post("/refresh")
 def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     tokens = AuthService.refresh_access_token(db, request.refresh_token)
     tokens["token_type"] = "bearer"
     return tokens
+
 
 @router.get("/me")
 def get_my_profile(token: str = Depends(oauth2_scheme)):

@@ -17,5 +17,6 @@ requests
 
 # Testing and Linting
 pytest
+httpx
 flake8
 black

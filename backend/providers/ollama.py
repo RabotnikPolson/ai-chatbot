@@ -3,12 +3,10 @@ import time
 import logging
 import json
 
-# Настроим простой логгер, чтобы в консоли видеть время ответа
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 class OllamaProvider:
-    # При инициализации указываем адрес контейнера (ollama:11434) и имя модели
     def __init__(self, base_url: str = "http://ollama:11434", model: str = "qwen2.5:0.5b"):
         self.base_url = base_url
         self.model = model
@@ -52,7 +50,6 @@ class OllamaProvider:
             logger.error(f"Ошибка при вызове Ollama API: {e}")
             raise e
 
-    # ИСПРАВЛЕНИЕ: Теперь метод находится на правильном уровне внутри класса
     def generate_stream(self, messages: list[dict], temperature: float = 0.7):
         """
         Генерирует ответ потоком (стриминг).
@@ -69,7 +66,7 @@ class OllamaProvider:
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": True,  # НОВОЕ: Говорим Ollama отдавать по одному слову
+            "stream": True,
             "options": {
                 "temperature": temperature
             }
@@ -77,20 +74,16 @@ class OllamaProvider:
 
         logger.info(f"Начинаем стриминг из Ollama (модель: {self.model})...")
 
-        # ИСПРАВЛЕНИЕ: Тело функции сдвинуто вправо, как требует Python
         try:
             with requests.post(url, json=payload, stream=True, timeout=60) as response:
                 response.raise_for_status()
 
-                # Читаем ответ построчно по мере его поступления
                 for line in response.iter_lines():
                     if line:
-                        # Ollama присылает JSON-строку на каждый сгенерированный токен
                         chunk = json.loads(line)
                         text_piece = chunk.get("message", {}).get("content", "")
 
                         if text_piece:
-                            # yield выплевывает кусочек текста наружу, но не завершает функцию!
                             yield text_piece
         except Exception as e:
             logger.error(f"Ошибка стриминга Ollama API: {e}")

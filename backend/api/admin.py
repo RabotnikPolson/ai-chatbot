@@ -25,7 +25,7 @@ def create_faq(
         db: Session = Depends(get_db),
         admin: User = Depends(get_current_admin)
 ):
-    new_faq = FAQItem(title=faq_data.title, content=faq_data.content)
+    new_faq = FAQItem(title=faq_data.title, content=faq_data.content, tags=faq_data.tags)
     db.add(new_faq)
     db.commit()
     db.refresh(new_faq)
@@ -45,7 +45,6 @@ def delete_faq(
         db: Session = Depends(get_db),
         admin: User = Depends(get_current_admin)
 ):
-    # Ищем FAQ
     d_faq = db.query(FAQItem).filter(FAQItem.id == id).first()
 
     if not d_faq:

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 import jwt
+from jwt.exceptions import InvalidTokenError
 import json
 
 from schemas.conversation import ConversationCreate, ConversationResponse
@@ -13,7 +14,7 @@ from api.auth import oauth2_scheme, get_db
 from services.security import SECRET_KEY, ALGORITHM
 
 from db.models import Message, MessageStatusEnum
-from schemas.message import MessageCreate, MessageResponse
+from schemas.message import MessageCreate, MessageResponse, SendMessageResponse
 from services.chat_service import ChatService
 
 
@@ -24,8 +25,14 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 messages_router = APIRouter(prefix="/messages", tags=["messages"])
 
 def get_current_user_id(token: str = Depends(oauth2_scheme)):
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    return int(payload.get("sub"))
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Неверный токен")
+        return int(user_id)
+    except (InvalidTokenError, ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Токен недействителен или просрочен")
 
 
 @router.post("/", response_model=ConversationResponse)
@@ -55,14 +62,21 @@ def get_conversation(
     return ChatService.get_conversation_by_id(db, id, user_id)
 
 
-@router.post("/{conversation_id}/messages", response_model=MessageResponse)
+@router.post("/{conversation_id}/messages", response_model=SendMessageResponse)
 def send_message(
         conversation_id: int,
         message_data: MessageCreate,
         db: Session = Depends(get_db),
         user_id: int = Depends(get_current_user_id)
 ):
-    return ChatService.send_message(db, user_id, conversation_id, message_data.text, redis_client)
+    return ChatService.send_message(
+        db,
+        user_id,
+        conversation_id,
+        message_data.text,
+        redis_client,
+        message_data.temperature,
+    )
 
 
 @messages_router.get("/{message_id}", response_model=MessageResponse)
@@ -73,7 +87,15 @@ def get_message_status(
 ):
     return ChatService.get_message(db, message_id, user_id)
 
-# SSE
+@messages_router.post("/{message_id}/retry", response_model=MessageResponse)
+def retry_message(
+        message_id: int,
+        db: Session = Depends(get_db),
+        user_id: int = Depends(get_current_user_id)
+):
+    return ChatService.retry_message(db, message_id, user_id)
+
+
 @messages_router.get("/{message_id}/stream")
 def stream_message(
         message_id: int,
@@ -89,8 +111,7 @@ def stream_message(
         pubsub = redis_client.pubsub()
         channel_name = f"chat_stream_{message_id}"
         pubsub.subscribe(channel_name)
-        
-        # Сначала достаем то, что уже могло сгенерироваться к моменту подключения
+
         partial = redis_client.get(f"chat_partial_{message_id}")
         if partial:
             yield f"data: {json.dumps(partial.decode('utf-8'), ensure_ascii=False)}\n\n"
@@ -106,7 +127,6 @@ def stream_message(
                         yield f"data: [ERROR]\n\n"
                         break
                     else:
-                        # Теперь data - это полный накопившийся ответ 
                         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         finally:
             pubsub.unsubscribe(channel_name)

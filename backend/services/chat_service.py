@@ -4,7 +4,7 @@ import json
 import uuid
 import redis
 
-from db.models import Conversation, Message, MessageRoleEnum, MessageStatusEnum
+from db.models import Conversation, Message, MessageRoleEnum, MessageStatusEnum, User, RoleEnum
 from schemas.conversation import ConversationCreate
 from schemas.message import MessageCreate
 from workers.tasks import generate_reply
@@ -36,12 +36,27 @@ class ChatService:
 
     @staticmethod
     def delete_conversation(db: Session, conv_id: int, user_id: int):
-        conv = ChatService.get_conversation_by_id(db, conv_id, user_id)
+        conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+        if not conv:
+            raise HTTPException(status_code=404, detail="Чат не найден")
+
+        requester = db.query(User).filter(User.id == user_id).first()
+        is_admin = requester is not None and requester.role == RoleEnum.admin
+        if conv.owner_user_id != user_id and not is_admin:
+            raise HTTPException(status_code=403, detail="Доступ запрещен")
+
         db.delete(conv)
         db.commit()
 
     @staticmethod
-    def send_message(db: Session, user_id: int, conversation_id: int, text: str, redis_client: redis.Redis) -> Message:
+    def send_message(
+        db: Session,
+        user_id: int,
+        conversation_id: int,
+        text: str,
+        redis_client: redis.Redis,
+        temperature: float | None = None,
+    ):
         chat = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.owner_user_id == user_id
@@ -50,7 +65,6 @@ class ChatService:
         if not chat:
             raise HTTPException(status_code=404, detail="Чат не найден")
 
-        # 2. Сохраняем сообщение пользователя в БД
         user_message = Message(
             conversation_id=conversation_id,
             role=MessageRoleEnum.user,
@@ -60,7 +74,6 @@ class ChatService:
         db.add(user_message)
         db.commit()
 
-        # 3. Создаем "пустое" сообщение для ассистента со статусом queued
         assistant_message = Message(
             conversation_id=conversation_id,
             role=MessageRoleEnum.assistant,
@@ -71,9 +84,9 @@ class ChatService:
         db.commit()
         db.refresh(assistant_message)
 
-        generate_reply.delay(assistant_message.id)
+        effective_temperature = 0.7 if temperature is None else temperature
+        generate_reply.delay(assistant_message.id, effective_temperature)
 
-        # Update cache
         cache_key = f"conversation:{conversation_id}:last_messages"
         cached_history_raw = redis_client.get(cache_key)
         if cached_history_raw:
@@ -99,7 +112,10 @@ class ChatService:
             }
         })
 
-        return assistant_message
+        return {
+            "message_id": assistant_message.id,
+            "status": assistant_message.status,
+        }
 
     @staticmethod
     def get_message(db: Session, message_id: int, user_id: int) -> Message:
@@ -127,5 +143,26 @@ class ChatService:
             Message.conversation_id == conversation_id
         ).order_by(Message.created_at.asc()).all()
         return messages
+
+    @staticmethod
+    def retry_message(db: Session, message_id: int, user_id: int) -> Message:
+        message = ChatService.get_message(db, message_id, user_id)
+        if message.role != MessageRoleEnum.assistant:
+            raise HTTPException(status_code=400, detail="Можно повторить только ответ ассистента")
+
+        retried_message = Message(
+            conversation_id=message.conversation_id,
+            role=MessageRoleEnum.assistant,
+            content="",
+            status=MessageStatusEnum.queued,
+            provider="ollama",
+            error=None,
+        )
+        db.add(retried_message)
+        db.commit()
+        db.refresh(retried_message)
+
+        generate_reply.delay(retried_message.id, 0.7)
+        return retried_message
 
 chat_service = ChatService()

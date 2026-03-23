@@ -32,10 +32,9 @@ api.interceptors.response.use(
 
             if (refreshToken) {
                 try {
-                    const response = await axios.post('http://localhost:8000/auth/refresh', null, {
-                        headers: {
-                            Authorization: `Bearer ${refreshToken}`
-                        }
+                    // Backend expects refresh token in JSON body.
+                    const response = await axios.post('http://localhost:8000/auth/refresh', {
+                        refresh_token: refreshToken,
                     });
 
                     const newAccessToken = response.data.access_token;

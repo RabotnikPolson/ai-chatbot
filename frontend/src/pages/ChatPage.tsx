@@ -17,12 +17,24 @@ interface Message {
 }
 
 const AI_ICON = (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-full h-full text-purple-400">
-        <path fillRule="evenodd" d="M9.315 4.54a.75.75 0 011.37 0l1.284 3.012a.75.75 0 00.418.418l3.013 1.284a.75.75 0 010 1.37l-3.013 1.284a.75.75 0 00-.418.418l-1.284 3.013a.75.75 0 01-1.37 0l-1.284-3.013a.75.75 0 00-.418-.418l-3.013-1.284a.75.75 0 010-1.37l3.013-1.284a.75.75 0 00.418-.418l1.284-3.012zM16.5 14.25a.75.75 0 011.37 0l.642 1.506a.75.75 0 00.418.418l1.506.642a.75.75 0 010 1.37l-1.506.642a.75.75 0 00-.418.418l-.642 1.506a.75.75 0 01-1.37 0l-.642-1.506a.75.75 0 00-.418-.418l-1.506-.642a.75.75 0 010-1.37l1.506-.642a.75.75 0 00.418-.418l.642-1.506zM18.75 6.75a.75.75 0 00-1.37 0l-.258.604a.75.75 0 01-.418.418l-.604.258a.75.75 0 000 1.37l.604.258a.75.75 0 01.418.418l.258.604a.75.75 0 001.37 0l.258-.604a.75.75 0 01.418-.418l.604-.258a.75.75 0 000-1.37l-.604-.258a.75.75 0 01-.418-.418l-.258-.604z" clipRule="evenodd" />
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={1.5}
+        stroke="currentColor"
+        className="w-full h-full text-white"
+    >
+        <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"
+        />
     </svg>
 );
 
-const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
+
+const CodeBlock = ({node, inline, className, children, ...props}: any) => {
     const match = /language-(\w+)/.exec(className || '');
     const [isCopied, setIsCopied] = useState(false);
 
@@ -35,7 +47,8 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
     if (!inline && match) {
         return (
             <div className="flex flex-col w-full">
-                <div className="flex items-center justify-between px-4 py-2 bg-[#2D2E31] text-[#a8a8a8] text-xs border-b border-[#333333]">
+                <div
+                    className="flex items-center justify-between px-4 py-2 bg-[#2D2E31] text-[#a8a8a8] text-xs border-b border-[#333333]">
                     <span>{match[1]}</span>
                     <button
                         onClick={handleCopy}
@@ -68,7 +81,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
             </div>
         );
     }
-    
+
     return (
         <code className={className} {...props}>
             {children}
@@ -219,26 +232,16 @@ const ChatPage: React.FC = () => {
         if (!activeConversationId || isSending) return;
         setIsSending(true);
         try {
-            // Find the previous user message that caused this failure
-            const msgIndex = messages.findIndex(m => m.id === failedMsg.id);
-            if (msgIndex <= 0) return;
-            
-            const prevUserMsg = messages[msgIndex - 1];
-            if (prevUserMsg.role !== 'user') return;
-
-            // Retrying means sending the text again
-            await api.post(`/conversations/${activeConversationId}/messages`, {
-                text: prevUserMsg.content
-            });
+            const retryResp = await api.post(`/messages/${failedMsg.id}/retry`);
+            const newMessageId = retryResp.data?.id;
 
             // Refetch messages and trigger stream
             const resp = await api.get(`/conversations/${activeConversationId}/messages`);
             const data = resp.data;
             setMessages(data);
 
-            const lastAssistantMsg = data.slice().reverse().find((m: Message) => m.role === 'assistant');
-            if (lastAssistantMsg && lastAssistantMsg.status !== 'done') {
-                streamMessage(lastAssistantMsg.id, activeConversationId);
+            if (newMessageId) {
+                streamMessage(newMessageId, activeConversationId);
             }
         } catch (error) {
             console.error('Ошибка при повторе сообщения:', error);
@@ -323,8 +326,8 @@ const ChatPage: React.FC = () => {
                             <div key={msg.id} className="flex justify-end w-full">
                                 <div className="bg-[#2A2B2E] text-[#e3e3e3] rounded-3xl px-6 py-3 max-w-[80%] text-[15px] leading-relaxed shadow-sm">
                                     <div className="prose prose-invert max-w-none break-words">
-                                        <ReactMarkdown 
-                                            remarkPlugins={[remarkGfm]} 
+                                        <ReactMarkdown
+                                            remarkPlugins={[remarkGfm]}
                                             rehypePlugins={[rehypeHighlight]}
                                             components={{
                                                 code: CodeBlock
@@ -342,8 +345,8 @@ const ChatPage: React.FC = () => {
                                 </div>
                                 <div className="text-[#e3e3e3] text-[15px] leading-relaxed max-w-[85%] mt-1 overflow-hidden flex flex-col gap-2">
                                     <div className="prose prose-invert max-w-none break-words overflow-x-auto">
-                                        <ReactMarkdown 
-                                            remarkPlugins={[remarkGfm]} 
+                                        <ReactMarkdown
+                                            remarkPlugins={[remarkGfm]}
                                             rehypePlugins={[rehypeHighlight]}
                                             components={{
                                                 code: CodeBlock
@@ -352,7 +355,7 @@ const ChatPage: React.FC = () => {
                                             {msg.content || (msg.status === 'failed' ? 'Произошла ошибка при генерации ответа.' : 'Ожидание ответа...')}
                                         </ReactMarkdown>
                                     </div>
-                                    
+
                                     {/* Индикаторы статусов */}
                                     <div className="flex items-center gap-2 mt-1">
                                         {msg.status === 'queued' && (
@@ -380,7 +383,7 @@ const ChatPage: React.FC = () => {
                                                     </svg>
                                                     Ошибка
                                                 </span>
-                                                <button 
+                                                <button
                                                     onClick={() => handleRetry(msg)}
                                                     className="text-xs bg-[#2D2E31] hover:bg-[#3D3E41] text-gray-200 px-3 py-1 rounded-full flex items-center gap-1 transition-colors"
                                                 >
