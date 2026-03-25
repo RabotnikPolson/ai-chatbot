@@ -1,5 +1,6 @@
 from unittest.mock import patch
 from db.models import Message, MessageStatusEnum
+from uuid import UUID
 
 def test_send_message(client):
     # 1. Arrange: Создаем юзера, получаем токен, создаем чат
@@ -29,7 +30,11 @@ def test_send_message(client):
     assert "message_id" in data
     assert data["status"] == "queued"
 
-    mock_task.assert_called_once_with(data["message_id"], 0.7)
+    UUID(data["message_id"])
+    mock_task.assert_called_once()
+    queued_message_id, queued_temperature = mock_task.call_args.args
+    assert isinstance(queued_message_id, int)
+    assert queued_temperature == 0.7
 
 
 def test_send_message_with_temperature(client):
@@ -54,7 +59,11 @@ def test_send_message_with_temperature(client):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "queued"
-    mock_task.assert_called_once_with(data["message_id"], 0.2)
+    UUID(data["message_id"])
+    mock_task.assert_called_once()
+    queued_message_id, queued_temperature = mock_task.call_args.args
+    assert isinstance(queued_message_id, int)
+    assert queued_temperature == 0.2
 
 
 def test_get_message_status(client):
@@ -110,7 +119,7 @@ def test_retry_creates_new_assistant_message(client, db_session):
         original_id = msg_resp.json()["message_id"]
 
         # Simulate worker failure so retry path starts from failed message.
-        original_msg = db_session.query(Message).filter(Message.id == original_id).first()
+        original_msg = db_session.query(Message).filter(Message.public_id == original_id).first()
         original_msg.status = MessageStatusEnum.failed
         original_msg.error = "boom"
         db_session.commit()
@@ -126,5 +135,38 @@ def test_retry_creates_new_assistant_message(client, db_session):
     assert old_msg_resp.status_code == 200
     assert old_msg_resp.json()["status"] == "failed"
 
-    mock_task.assert_any_call(original_id, 0.7)
-    mock_task.assert_any_call(retried_data["id"], 0.7)
+    assert mock_task.call_count == 2
+    first_call_id, first_call_temp = mock_task.call_args_list[0].args
+    second_call_id, second_call_temp = mock_task.call_args_list[1].args
+    assert isinstance(first_call_id, int)
+    assert isinstance(second_call_id, int)
+    assert first_call_id != second_call_id
+    assert first_call_temp == 0.7
+    assert second_call_temp == 0.7
+
+
+def test_retry_rejects_non_failed_assistant_message(client):
+    client.post("/auth/register", json={"email": "msg_retry_non_failed@example.com", "password": "123"})
+    login_resp = client.post("/auth/login", data={"username": "msg_retry_non_failed@example.com", "password": "123"})
+    token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    conv_resp = client.post("/conversations/", json={"title": "Чат retry guard"}, headers=headers)
+    conv_id = conv_resp.json()["id"]
+
+    with patch("services.chat_service.generate_reply.delay"), \
+            patch("api.conversations.redis_client.get", return_value=None), \
+            patch("api.conversations.redis_client.setex"), \
+            patch("api.conversations.redis_client.delete"):
+        msg_resp = client.post(
+            f"/conversations/{conv_id}/messages",
+            json={"text": "Ответь"},
+            headers=headers,
+        )
+
+    queued_assistant_id = msg_resp.json()["message_id"]
+    retry_resp = client.post(f"/messages/{queued_assistant_id}/retry", headers=headers)
+
+    assert retry_resp.status_code == 400
+    assert "failed" in retry_resp.json()["detail"]
+

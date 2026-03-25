@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from uuid import UUID
 import jwt
 from jwt.exceptions import InvalidTokenError
 import json
@@ -81,7 +82,7 @@ def send_message(
 
 @messages_router.get("/{message_id}", response_model=MessageResponse)
 def get_message_status(
-        message_id: int,
+        message_id: UUID,
         db: Session = Depends(get_db),
         user_id: int = Depends(get_current_user_id)
 ):
@@ -89,7 +90,7 @@ def get_message_status(
 
 @messages_router.post("/{message_id}/retry", response_model=MessageResponse)
 def retry_message(
-        message_id: int,
+        message_id: UUID,
         db: Session = Depends(get_db),
         user_id: int = Depends(get_current_user_id)
 ):
@@ -98,7 +99,7 @@ def retry_message(
 
 @messages_router.get("/{message_id}/stream")
 def stream_message(
-        message_id: int,
+        message_id: UUID,
         db: Session = Depends(get_db),
         user_id: int = Depends(get_current_user_id)
 ):
@@ -109,10 +110,11 @@ def stream_message(
 
     def event_generator():
         pubsub = redis_client.pubsub()
-        channel_name = f"chat_stream_{message_id}"
+        internal_message_id = message.id
+        channel_name = f"chat_stream_{internal_message_id}"
         pubsub.subscribe(channel_name)
 
-        partial = redis_client.get(f"chat_partial_{message_id}")
+        partial = redis_client.get(f"chat_partial_{internal_message_id}")
         if partial:
             yield f"data: {json.dumps(partial.decode('utf-8'), ensure_ascii=False)}\n\n"
 

@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
+/*@plugin "@tailwindcss/typography";*/
 
 .custom-scrollbar::-webkit-scrollbar {
     width: 8px;

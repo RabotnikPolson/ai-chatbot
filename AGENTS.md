@@ -1,15 +1,15 @@
 # AGENTS.md
 
 ## Project Map
-- Monorepo with two deployable parts: `backend/` (FastAPI + Celery + SQLAlchemy) and `frontend/` (React + Vite + Zustand + React Query).
+- Monorepo with two deployable parts: `backend/` (FastAPI + Celery + SQLAlchemy) and `frontend/` (React + Vite + Zustand + React Query + Tailwind CSS v4 + React Markdown).
 - Runtime topology is defined in `docker-compose.yml`: `api`, `worker`, `db` (Postgres), `redis` (broker + pub/sub), `ollama` (LLM), `frontend`.
 - FastAPI entrypoint is `backend/main.py`; routers are mounted from `backend/api/auth.py`, `backend/api/conversations.py` (both `router` and `messages_router`), `backend/api/admin.py`.
 
 ## Core Request/Data Flow
 - Auth flow: `POST /auth/login` expects `application/x-www-form-urlencoded` (`OAuth2PasswordRequestForm`), not JSON (`backend/api/auth.py`).
 - Chat send flow (`POST /conversations/{id}/messages`): persists user message + queued assistant message, accepts optional `temperature`, then enqueues Celery task `generate_reply.delay(message_id, effective_temperature)` (default `0.7`) (`backend/services/chat_service.py`, `backend/schemas/message.py`).
-- Worker flow (`backend/workers/tasks.py`): marks message `processing` -> builds context from Redis/DB -> optional FAQ RAG-lite injection -> streams from Ollama -> publishes to Redis channel `chat_stream_{message_id}` -> stores final text/status in DB.
-- Streaming API (`GET /messages/{message_id}/stream`) sends SSE events as full accumulated text chunks and terminates with `[DONE]`/`[ERROR]` (`backend/api/conversations.py`).
+- Worker flow (`backend/workers/tasks.py`): marks message `processing` -> builds context from Redis/DB -> optional FAQ RAG-lite injection -> streams from Ollama via `providers.ollama.OllamaProvider` -> publishes to Redis channel `chat_stream_{message_id}` -> stores final text/status in DB.
+- Streaming API (`GET /messages/{message_id}/stream`) sends SSE events as full accumulated text chunks and terminates with `[DONE]`/`[ERROR]` (`backend/api/conversations.py`). Supports stream reconnection by returning `[DONE]` instantly if already finished, or yielding `chat_partial_{message_id}` from Redis as the first chunk.
 - Frontend does manual SSE parsing with `fetch`, replaces assistant message content on each chunk (no concat), aborts active streams on chat switch/unmount, auto-reconnects for `queued|processing` assistant messages after reload, then refetches canonical history on stream end (`frontend/src/pages/ChatPage.tsx`).
 
 ## State and Persistence Patterns

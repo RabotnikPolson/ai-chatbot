@@ -13,6 +13,10 @@ This is the backend and soon-to-be frontend for the AI Chatbot application.
    ```bash
    cp .env.example .env
    ```
+   Или в PowerShell:
+   ```powershell
+   Copy-Item .env.example .env
+   ```
    Укажите в `.env` свои значения, особенно `SECRET_KEY`.
 3. Соберите и запустите все контейнеры одной командой:
    ```bash
@@ -28,7 +32,13 @@ This is the backend and soon-to-be frontend for the AI Chatbot application.
    ```
    *Вы можете задать боту любой вопрос прямо в терминале, чтобы убедиться, что модель отвечает.*
 
-6. **Как запустить тесты:**
+6. **Проверка состояния зависимостей:**
+   ```bash
+   curl http://localhost:8000/health
+   ```
+   Ожидается `200` и `{"status":"all systems go", ...}`.
+
+7. **Как запустить тесты:**
    ```bash
    docker compose exec api pytest
    ```
@@ -40,7 +50,7 @@ This is the backend and soon-to-be frontend for the AI Chatbot application.
 ## Services
 - **api**: FastAPI backend serving HTTP and SSE endpoints.
 - **worker**: Celery worker for handling LLM inferences asynchronously.
-- **db**: PostgreSQL database.
+- **db**: PostgreSQL database (also reachable by hostname alias `postgres` inside Docker network).
 - **redis**: Used as a Celery broker and for Pub/Sub SSE streaming.
 - **ollama**: Local LLM provider.
 - **frontend**: React + TypeScript + Vite frontend.

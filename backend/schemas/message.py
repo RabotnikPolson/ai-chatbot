@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 from db.models import MessageRoleEnum, MessageStatusEnum
 
 # 1. Что мы ждем от фронтенда при отправке сообщения
@@ -10,12 +11,12 @@ class MessageCreate(BaseModel):
 
 
 class SendMessageResponse(BaseModel):
-    message_id: int
+    message_id: UUID
     status: MessageStatusEnum
 
 # 2. Что мы возвращаем на фронтенд
 class MessageResponse(BaseModel):
-    id: int
+    id: UUID = Field(validation_alias="public_id")
     conversation_id: int
     role: MessageRoleEnum
     content: str

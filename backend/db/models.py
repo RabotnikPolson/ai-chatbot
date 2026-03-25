@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
 import enum
+import uuid
 
 class RoleEnum(str, enum.Enum):
     user = "user"
@@ -45,6 +46,7 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
+    public_id = Column(String(36), unique=True, index=True, nullable=False, default=lambda: str(uuid.uuid4()))
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
 
     role = Column(Enum(MessageRoleEnum), nullable=False)

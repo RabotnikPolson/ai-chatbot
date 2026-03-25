@@ -16,7 +16,7 @@ export type MessageStatus = 'queued' | 'processing' | 'done' | 'failed';
 export type MessageRole = 'user' | 'assistant';
 
 export interface Message {
-    id: number;
+    id: string;
     conversation_id: number;
     role: MessageRole;
     content: string;
@@ -39,7 +39,7 @@ export interface SendMessageRequest {
 }
 
 export interface SendMessageResponse {
-    message_id: number; // UUID if string in TS, backend responds with int id now based on models
+    message_id: string;
     status: MessageStatus;
 }
 

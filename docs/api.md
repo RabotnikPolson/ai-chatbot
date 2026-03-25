@@ -160,7 +160,7 @@ Fetch all messages in a conversation (ordered by creation time).
 ```json
 [
   {
-    "id": 1,
+    "id": "92d79368-2e11-45ad-b3d8-23a31f6c27c7",
     "conversation_id": 42,
     "role": "user",
     "content": "Hello!",
@@ -171,7 +171,7 @@ Fetch all messages in a conversation (ordered by creation time).
     "created_at": "2026-03-23T10:00:00Z"
   },
   {
-    "id": 2,
+    "id": "4d4a0f5d-cba9-4888-9c3d-e7f29f7dc4f6",
     "conversation_id": 42,
     "role": "assistant",
     "content": "Hi there!",
@@ -204,7 +204,7 @@ Send a message and enqueue bot response generation.
 **Response (200):**
 ```json
 {
-  "message_id": 2,
+  "message_id": "4d4a0f5d-cba9-4888-9c3d-e7f29f7dc4f6",
   "status": "queued"
 }
 ```
@@ -244,7 +244,7 @@ Get a single message's status and content.
 **Response (200):**
 ```json
 {
-  "id": 2,
+  "id": "4d4a0f5d-cba9-4888-9c3d-e7f29f7dc4f6",
   "conversation_id": 42,
   "role": "assistant",
   "content": "Hi there!",
@@ -284,13 +284,13 @@ data: [DONE]
 
 **Behavior:**
 1. If message.status == `done`: immediately send `[DONE]`
-2. Else: subscribe to Redis channel `chat_stream_{message_id}`
+2. Else: subscribe to the message stream channel and forward chunks via SSE
 3. Each chunk received from worker → `data: <accumulated_full_text>`
 4. Terminal event: `[DONE]` (success) or `[ERROR]` (worker failure)
 
 **Frontend Parsing:**
 ```javascript
-const response = await fetch('http://localhost:8000/messages/2/stream');
+const response = await fetch('http://localhost:8000/messages/4d4a0f5d-cba9-4888-9c3d-e7f29f7dc4f6/stream');
 const reader = response.body.getReader();
 const decoder = new TextDecoder();
 
@@ -324,7 +324,7 @@ Retry a failed assistant message (creates new message).
 **Response (200):**
 ```json
 {
-  "id": 3,
+  "id": "f52c0dc0-9d9b-40cc-a372-b8a407f9cf67",
   "conversation_id": 42,
   "role": "assistant",
   "content": "",
@@ -337,13 +337,13 @@ Retry a failed assistant message (creates new message).
 ```
 
 **Behavior:**
-- Only works for `status: failed` messages
+- Works only for assistant messages with `status: failed`
 - Old message preserved for history
 - New message created with `status: queued` and fresh `id`
 - New Celery task enqueued with default `temperature: 0.7`
 
 **Errors:**
-- `400` — Message is not an assistant message or not failed
+- `400` — Message is not an assistant message or message status is not `failed`
 - `404` — Message not found or access denied
 
 ---
@@ -470,7 +470,7 @@ Health check: validates DB and Redis connectivity.
 ### Message
 ```json
 {
-  "id": 2,
+  "id": "4d4a0f5d-cba9-4888-9c3d-e7f29f7dc4f6",
   "conversation_id": 42,
   "role": "assistant",
   "content": "Hi there!",

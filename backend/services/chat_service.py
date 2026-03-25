@@ -3,6 +3,7 @@ from fastapi import HTTPException
 import json
 import uuid
 import redis
+from uuid import UUID
 
 from db.models import Conversation, Message, MessageRoleEnum, MessageStatusEnum, User, RoleEnum
 from schemas.conversation import ConversationCreate
@@ -113,13 +114,13 @@ class ChatService:
         })
 
         return {
-            "message_id": assistant_message.id,
+            "message_id": assistant_message.public_id,
             "status": assistant_message.status,
         }
 
     @staticmethod
-    def get_message(db: Session, message_id: int, user_id: int) -> Message:
-        message = db.query(Message).filter(Message.id == message_id).first()
+    def get_message(db: Session, message_id: UUID, user_id: int) -> Message:
+        message = db.query(Message).filter(Message.public_id == str(message_id)).first()
         if not message:
             raise HTTPException(status_code=404, detail="Сообщение не найдено")
 
@@ -145,10 +146,12 @@ class ChatService:
         return messages
 
     @staticmethod
-    def retry_message(db: Session, message_id: int, user_id: int) -> Message:
+    def retry_message(db: Session, message_id: UUID, user_id: int) -> Message:
         message = ChatService.get_message(db, message_id, user_id)
         if message.role != MessageRoleEnum.assistant:
             raise HTTPException(status_code=400, detail="Можно повторить только ответ ассистента")
+        if message.status != MessageStatusEnum.failed:
+            raise HTTPException(status_code=400, detail="Повтор возможен только для failed-сообщений ассистента")
 
         retried_message = Message(
             conversation_id=message.conversation_id,

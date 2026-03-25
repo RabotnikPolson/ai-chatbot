@@ -3,6 +3,8 @@ import redis
 import json
 import logging
 import time
+import random
+import requests
 
 
 from sqlalchemy import or_
@@ -20,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 redis_client = redis.from_url(REDIS_URL)
+
+NETWORK_RETRY_ERRORS = (
+    requests.exceptions.Timeout,
+    requests.exceptions.ConnectionError,
+)
 
 @celery_app.task(bind=True, name="generate_reply", max_retries=3, default_retry_delay=5)
 def generate_reply(self, message_id: int, temperature: float = 0.7):
@@ -176,9 +183,15 @@ def generate_reply(self, message_id: int, temperature: float = 0.7):
             
             db.rollback()
             
-            if self.request.retries < self.max_retries:
-                json_logger.warning(f"Ошибка при генерации, попытка повтора ({self.request.retries + 1}/{self.max_retries}): {str(e)}")
-                raise self.retry(exc=e)
+            is_network_error = isinstance(e, NETWORK_RETRY_ERRORS)
+            if is_network_error and self.request.retries < self.max_retries:
+                base_delay = 5 * (2 ** self.request.retries)
+                countdown = min(60, base_delay) + random.uniform(0, 1)
+                json_logger.warning(
+                    f"Сетевая ошибка при генерации, попытка повтора ({self.request.retries + 1}/{self.max_retries}), "
+                    f"countdown={countdown:.2f}s: {str(e)}"
+                )
+                raise self.retry(exc=e, countdown=countdown)
 
             if msg:
                 fail_msg = db.query(Message).filter(Message.id == message_obj_id).first()

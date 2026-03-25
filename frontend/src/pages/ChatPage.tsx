@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 import api from '../api/axios';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 // @ts-ignore
@@ -10,7 +10,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 
 interface Message {
-    id: number;
+    id: string;
     content: string;
     role: 'user' | 'assistant';
     status?: string;
@@ -114,7 +114,7 @@ const ChatPage: React.FC = () => {
     });
 
     // Ref для хранения активных стримов, чтобы можно было отменить их при смене чата
-    const activeStreams = useRef<Map<number, AbortController>>(new Map());
+    const activeStreams = useRef<Map<string, AbortController>>(new Map());
 
     useEffect(() => {
         // Очищаем стримы ПРИ СМЕНЕ активного чата или unmount, чтобы не было гонок
@@ -160,7 +160,7 @@ const ChatPage: React.FC = () => {
         }
     }, [inputText]);
 
-    const streamMessage = async (messageId: number, chatId: number, signal?: AbortSignal) => {
+    const streamMessage = async (messageId: string, chatId: number, signal?: AbortSignal) => {
         const token = useAuthStore.getState().token;
         try {
             const response = await fetch(`http://localhost:8000/messages/${messageId}/stream`, {
@@ -271,7 +271,7 @@ const ChatPage: React.FC = () => {
                 setActiveConversation(targetChatId);
             }
 
-            setMessages(prev => [...prev, { id: Date.now(), content: text, role: 'user' }]);
+            setMessages(prev => [...prev, { id: `temp-${Date.now()}`, content: text, role: 'user' }]);
 
             await api.post(`/conversations/${targetChatId}/messages`, {
                 text: text
